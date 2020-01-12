@@ -82,3 +82,17 @@ $ ./practice00
 ```
 Hello OpenID Connect!
 ```
+
+# エディタについて
+
+エディタの指定はありませんが、効率的な開発を行うために以下のような環境を整えておくことを推奨します。
+
+* Vim/Neovim
+  * https://github.com/fatih/vim-go
+* Emacs
+  * https://emacs-jp.github.io/programming/golang
+* Visual Studio Code
+  * https://code.visualstudio.com
+  * https://marketplace.visualstudio.com/items?itemName=ms-vscode.Go
+
+※ インストール、セットアップ方法については各種サイトをご参照ください。
