@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"io/ioutil"
+	"log"
 	"math/big"
 	"math/rand"
 	"net/http"
@@ -20,21 +22,31 @@ import (
 	"time"
 )
 
+const (
+	port = 8080
+)
+
 func main() {
 	// 1-1. マルチプレクサにハンドラを登録
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, fmt.Sprintf("http://localhost:%d/index", port), http.StatusMovedPermanently)
+	})
 	mux.HandleFunc("/index", index)
 	mux.HandleFunc("/callback", callback)
 
 	// 1-2. サーバー設定
 	server := &http.Server{
-		Addr:           "0.0.0.0:8080",
+		Addr:           fmt.Sprintf("0.0.0.0:%d", port),
 		Handler:        mux,
-		ReadTimeout:    time.Duration(10 * int64(time.Second)),
-		WriteTimeout:   time.Duration(600 * int64(time.Second)),
+		ReadTimeout:    time.Second * 10,
+		WriteTimeout:   time.Second * 600,
 		MaxHeaderBytes: 1 << 20, // 1MB
 	}
-	server.ListenAndServe()
+	err := server.ListenAndServe()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 // 1-6. error.htmlに渡す構造体(エラー文言)
@@ -42,16 +54,21 @@ type Error struct {
 	Error string
 }
 
-// 1-10. index.htmlに渡す構造体(AuthorizationリクエストURL)
-type Index struct {
-	AuthorizationUrl string
+var (
+	// 1-5. テンプレートをレンダリング
+	indexTemplate    = template.Must(template.ParseFiles("templates/index.html"))
+	callbackTemplate = template.Must(template.ParseFiles("templates/callback.html"))
+	errorTemplate    = template.Must(template.ParseFiles("templates/error.html"))
+)
+
+// 4-2. ランダム文字列を生成
+func init() {
+	rand.Seed(time.Now().UnixNano())
 }
 
 var randLetters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
-// 4-2. ランダム文字列を生成
 func generateRandomString() string {
-	rand.Seed(time.Now().UnixNano())
 	result := make([]rune, 32)
 	for i := range result {
 		result[i] = randLetters[rand.Intn(len(randLetters))]
@@ -59,14 +76,22 @@ func generateRandomString() string {
 	return string(result)
 }
 
-// 1-3. Client ID、Client Secret、リダイレクトURIを設定
-const CLIENT_ID = "<CLIENT_ID>"
-const CLIENT_SECRET = "<CLIENT_SECRET>"
-const REDIRECT_URI = "http://localhost:8080/callback"
+const (
+	// 1-3. Client ID、Client Secret、リダイレクトURIを設定
+	ClientID     = "<CLIENT_ID>"
+	ClientSecret = "<CLIENT_SECRET>"
+)
+
+var RedirectURI = fmt.Sprintf("http://localhost:%d/callback", port)
+
+const (
+	// 1-4. AuthorizationリクエストURL生成
+	authorizationEndpoint = "https://auth.login.yahoo.co.jp"
+)
 
 // AuthorizationリクエストのURLを生成
-func index(writer http.ResponseWriter, request *http.Request) {
-	fmt.Println("[[ login started ]]")
+func index(w http.ResponseWriter, r *http.Request) {
+	log.Println("[[ login started ]]")
 	// 4-1. セッションCookieに紐付けるstate値を生成し保存
 	state := generateRandomString()
 	stateCookie := &http.Cookie{
@@ -74,7 +99,7 @@ func index(writer http.ResponseWriter, request *http.Request) {
 		Value:    state,
 		HttpOnly: true,
 	}
-	http.SetCookie(writer, stateCookie)
+	http.SetCookie(w, stateCookie)
 	// 5-1. セッションCookieに紐付けるnonce値を生成し保存
 	nonce := generateRandomString()
 	nonceCookie := &http.Cookie{
@@ -82,24 +107,23 @@ func index(writer http.ResponseWriter, request *http.Request) {
 		Value:    nonce,
 		HttpOnly: true,
 	}
-	http.SetCookie(writer, nonceCookie)
-	fmt.Println("stored state and nonce in session")
+	http.SetCookie(w, nonceCookie)
+	log.Println("stored state and nonce in session")
 
 	// 1-4. AuthorizationリクエストURL生成
-	authorizationEndpoint := "https://auth.login.yahoo.co.jp"
 	u, err := url.Parse(authorizationEndpoint)
 	if err != nil {
 		// 1-5. 構造体にエラー文言を格納してerror.htmlをレンダリング
-		e := Error{Error: "url parse error"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "url parse error")
 		return
 	}
 	u.Path = path.Join(u.Path, "yconnect/v2/authorization")
 	q := u.Query()
 	// 1-7. response_typeにAuthorization Code Flowを指定
 	q.Set("response_type", "code")
-	q.Set("client_id", CLIENT_ID)
-	q.Set("redirect_uri", REDIRECT_URI)
+	q.Set("client_id", ClientID)
+	q.Set("redirect_uri", RedirectURI)
 	// 1-8. UserInfoエンドポイントから取得するscopeを指定
 	q.Set("scope", "openid email")
 	// 4-3. セッションCookieに紐づけたstate値を指定
@@ -107,10 +131,10 @@ func index(writer http.ResponseWriter, request *http.Request) {
 	// 5-2. セッションCookieに紐づけたnonce値を指定
 	q.Set("nonce", nonce)
 	u.RawQuery = q.Encode()
-	fmt.Println("generated authorization endpoint url")
+	log.Println("generated authorization endpoint url")
 	// 1-9. 構造体にURLをセットしindex.htmlをレンダリング
-	indexData := Index{AuthorizationUrl: u.String()}
-	renderTemplate(writer, indexData, "index")
+	w.WriteHeader(http.StatusOK)
+	indexTemplate.Execute(w, u.String())
 }
 
 // 2-4. TokenエンドポイントのJSONレスポンスの結果を格納する構造体
@@ -119,18 +143,18 @@ type TokenResponse struct {
 	TokenType    string `json:"token_type"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int    `json:"expires_in"`
-	IdToken      string `json:"id_token"`
+	IDToken      string `json:"id_token"`
 }
 
 // 5-6. ID Tokenのヘッダーを格納する構造体
-type IdTokenHeader struct {
+type IDTokenHeader struct {
 	Type      string `json:"typ"`
 	Algorithm string `json:"alg"`
-	KeyId     string `json:"kid"`
+	KeyID     string `json:"kid"`
 }
 
 // 5-17. ID Tokenのペイロードを格納する構造体
-type IdTokenPayload struct {
+type IDTokenPayload struct {
 	Issuer                        string   `json:"iss"`
 	Subject                       string   `json:"sub"`
 	Audience                      []string `json:"aud"`
@@ -143,9 +167,9 @@ type IdTokenPayload struct {
 }
 
 // 5-11. JWKsエンドポイントのJSONレスポンスの結果を格納する構造体
-type JwksResponse struct {
+type JWKsResponse struct {
 	KeySets []struct {
-		KeyId     string `json:"kid"`
+		KeyID     string `json:"kid"`
 		KeyType   string `json:"kty"`
 		Algorithm string `json:"alg"`
 		Use       string `json:"use"`
@@ -162,149 +186,147 @@ type UserInfoResponse struct {
 
 // Access Tokenの取得、ID Tokenの取得と検証
 // UserInfoエンドポイントからユーザー属性情報の取得
-func callback(writer http.ResponseWriter, request *http.Request) {
+func callback(w http.ResponseWriter, r *http.Request) {
 	// 4-4. redirect_uriからstate値の抽出
-	query := request.URL.Query()
-	state := query["state"][0]
-	storedState, err := request.Cookie("state")
+	query := r.URL.Query()
+	stateQuery, ok := query["state"]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		errorTemplate.Execute(w, "state query not found")
+		return
+	}
+	state := stateQuery[0]
+	storedState, err := r.Cookie("state")
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		errorTemplate.Execute(w, "state cookie error")
+		return
+	}
 	// 4-5. セッションCookieに紐づけていたstate値の破棄
 	stateCookie := &http.Cookie{
 		Name:   "state",
 		MaxAge: -1,
 	}
-	http.SetCookie(writer, stateCookie)
+	http.SetCookie(w, stateCookie)
 
-	if err != nil {
-		e := Error{Error: "state cookie error"}
-		renderTemplate(writer, e, "error")
-		return
-	}
 	// 4-6. state値の検証
 	if state != storedState.Value {
-		e := Error{Error: "state does not match stored one"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusBadRequest)
+		errorTemplate.Execute(w, "state does not match stored one")
 		return
 	}
-	fmt.Println("success to verify state")
+	log.Println("success to verify state")
 
 	// 2-1. Tokenリクエスト
 	values := url.Values{}
 	values.Set("grant_type", "authorization_code")
-	values.Add("client_id", CLIENT_ID)
-	values.Add("client_secret", CLIENT_SECRET)
-	values.Add("redirect_uri", REDIRECT_URI)
+	values.Add("client_id", ClientID)
+	values.Add("client_secret", ClientSecret)
+	values.Add("redirect_uri", RedirectURI)
 	// 2-2. redirect_uriからAuthorization Codeを抽出
 	values.Add("code", query["code"][0])
-	tokenRequest, err := http.NewRequest(
-		"POST",
-		"https://auth.login.yahoo.co.jp/yconnect/v2/token",
-		strings.NewReader(values.Encode()),
-	)
+	tokenResponse, err := http.Post(authorizationEndpoint+"/yconnect/v2/token",
+		"application/x-www-form-urlencoded",
+		strings.NewReader(values.Encode()))
 	if err != nil {
-		e := Error{Error: "new http request error"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to post request")
 		return
 	}
-	tokenRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	tokenClient := &http.Client{}
-	tokenResponse, err := tokenClient.Do(tokenRequest)
-	if err != nil {
-		e := Error{Error: "post request error"}
-		renderTemplate(writer, e, "error")
-		return
-	}
-	defer tokenResponse.Body.Close()
-
-	tokenBody, err := ioutil.ReadAll(tokenResponse.Body)
-	if err != nil {
-		e := Error{Error: "read body error"}
-		renderTemplate(writer, e, "error")
-		return
-	}
+	defer func() {
+		_, err = io.Copy(ioutil.Discard, tokenResponse.Body)
+		if err != nil {
+			log.Panic(err)
+		}
+		err = tokenResponse.Body.Close()
+		if err != nil {
+			log.Panic(err)
+		}
+	}()
 
 	// 2-3. Tokenレスポンスを構造体に格納
-	tokenData := new(TokenResponse)
-	err = json.Unmarshal(tokenBody, tokenData)
+	var tokenData TokenResponse
+	err = json.NewDecoder(tokenResponse.Body).Decode(&tokenData)
 	if err != nil {
-		e := Error{Error: "json parse error"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to read token's json body")
 		return
 	}
-	fmt.Println("requested token endpoint")
+	log.Println("requested token endpoint")
 
 	// 5-3. ID Tokenのデータ部の分解
-	idTokenParts := strings.Split(tokenData.IdToken, ".")
-	fmt.Println("header: ", idTokenParts[0])
-	fmt.Println("payload: ", idTokenParts[1])
-	fmt.Println("signature: ", idTokenParts[2])
+	idTokenParts := strings.SplitN(tokenData.IDToken, ".", 3)
+	log.Println("header: ", idTokenParts[0])
+	log.Println("payload: ", idTokenParts[1])
+	log.Println("signature: ", idTokenParts[2])
 
 	// 5-4. ID Tokenのヘッダーの検証
-	header, _ := base64.RawURLEncoding.DecodeString(idTokenParts[0])
+	header, err := base64.RawURLEncoding.DecodeString(idTokenParts[0])
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to decode ID Token")
+		return
+	}
 	// 5-5. ID Tokenのヘッダーを構造体に格納
-	idTokenHeader := new(IdTokenHeader)
-	_ = json.Unmarshal(header, idTokenHeader)
-	fmt.Println("typ: ", idTokenHeader.Type)
-	fmt.Println("alg: ", idTokenHeader.Algorithm)
+	var idTokenHeader IDTokenHeader
+	err = json.Unmarshal(header, &idTokenHeader)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to decode ID Token")
+		return
+	}
+	log.Println("typ: ", idTokenHeader.Type)
+	log.Println("alg: ", idTokenHeader.Algorithm)
 
 	// 5-7. typ値の検証
 	if idTokenHeader.Type != "JWT" {
-		e := Error{Error: "invalid id token type"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "invalid id token type")
 		return
 	}
 	// 5-8. alg値の検証
 	if idTokenHeader.Algorithm != "RS256" {
-		e := Error{Error: "invalid id token algorithm"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "invalid id token algorithm")
 		return
 	}
 
 	// 5-9. JWKsリクエスト
-	jwksRequest, err := http.NewRequest(
-		"GET",
-		"https://auth.login.yahoo.co.jp/yconnect/v2/jwks",
-		nil,
-	)
+	jwksResponse, err := http.Get(authorizationEndpoint + "/yconnect/v2/jwks")
 	if err != nil {
-		e := Error{Error: "new http request error"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to get jwk")
 		return
 	}
-	jwksClient := &http.Client{}
-	jwksResponse, err := jwksClient.Do(jwksRequest)
-	if err != nil {
-		e := Error{Error: "post request error"}
-		renderTemplate(writer, e, "error")
-		return
-	}
-	defer jwksResponse.Body.Close()
-
-	jwksBody, err := ioutil.ReadAll(jwksResponse.Body)
-	if err != nil {
-		e := Error{Error: "read body error"}
-		renderTemplate(writer, e, "error")
-		return
-	}
+	defer func() {
+		_, err = io.Copy(ioutil.Discard, jwksResponse.Body)
+		if err != nil {
+			log.Panic(err)
+		}
+		err = jwksResponse.Body.Close()
+		if err != nil {
+			log.Panic(err)
+		}
+	}()
 
 	// 5-10. JWKsレスポンスを構造体に格納
-	jwksData := new(JwksResponse)
-	err = json.Unmarshal(jwksBody, jwksData)
+	var jwksData JWKsResponse
+	err = json.NewDecoder(jwksResponse.Body).Decode(&jwksData)
 	if err != nil {
-		e := Error{Error: "json parse error"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to read jwk's json body")
 		return
 	}
-	fmt.Println("requested jwks endpoint")
+	log.Println("requested jwks endpoint")
 
 	// 5-12. modulus値とexponent値の抽出
-	modulus := ""
-	exponent := ""
+	var modulus, exponent string
 	for _, keySet := range jwksData.KeySets {
-		if keySet.KeyId == idTokenHeader.KeyId {
-			fmt.Println("kid: " + keySet.KeyId)
+		if keySet.KeyID == idTokenHeader.KeyID {
+			log.Println("kid: " + keySet.KeyID)
 			if keySet.KeyType != "RSA" || keySet.Algorithm != idTokenHeader.Algorithm || keySet.Use != "sig" {
-				e := Error{Error: "invalid kid, alg or use"}
-				renderTemplate(writer, e, "error")
+				w.WriteHeader(http.StatusUnauthorized)
+				errorTemplate.Execute(w, "invalid kid, alg or use")
 				return
 			}
 			modulus = keySet.Modulus
@@ -312,30 +334,26 @@ func callback(writer http.ResponseWriter, request *http.Request) {
 			break
 		}
 	}
-	fmt.Println("modulus: ", modulus)
-	fmt.Println("exponent: ", exponent)
-
+	log.Println("modulus: ", modulus)
+	log.Println("exponent: ", exponent)
 	if modulus == "" || exponent == "" {
-		e := Error{Error: "failed to extract modulus or exponent"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to extract modulus or exponent")
 		return
 	}
-	fmt.Println("extracted modulus and exponent")
+	log.Println("extracted modulus and exponent")
 
 	// 5-13. n(modulus)とe(exponent)から公開鍵を生成
 	decodedModulus, err := base64.RawURLEncoding.DecodeString(modulus)
 	if err != nil {
-		e := Error{Error: "failed to decode modulus"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to decode modulus")
 		return
 	}
-	n := big.NewInt(0)
-	n.SetBytes(decodedModulus)
-
 	decodedExponent, err := base64.StdEncoding.DecodeString(exponent)
 	if err != nil {
-		e := Error{Error: "failed to decode exponent"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to decode exponent")
 		return
 	}
 	var exponentBytes []byte
@@ -349,82 +367,89 @@ func callback(writer http.ResponseWriter, request *http.Request) {
 	var e uint64
 	err = binary.Read(reader, binary.BigEndian, &e)
 	if err != nil {
-		e := Error{Error: "failed to read binary exponent"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to read binary exponent")
 		return
 	}
-	generatedPublicKey := rsa.PublicKey{N: n, E: int(e)}
-	fmt.Println("generated public key: ", generatedPublicKey)
-	fmt.Println("generated public key from n and e")
+	generatedPublicKey := rsa.PublicKey{N: big.NewInt(0).SetBytes(decodedModulus), E: int(e)}
+	log.Println("generated public key: ", generatedPublicKey)
+	log.Println("generated public key from n and e")
 
 	// 5-14. ID Tokenの署名を検証
 	decodedSignature, err := base64.RawURLEncoding.DecodeString(idTokenParts[2])
 	if err != nil {
-		e := Error{Error: "failed to decode signature"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to decode signature")
 		return
 	}
 
 	hash := crypto.Hash.New(crypto.SHA256)
-	hash.Write([]byte(idTokenParts[0] + "." + idTokenParts[1]))
+	_, err = hash.Write([]byte(idTokenParts[0] + "." + idTokenParts[1]))
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to create id token hash")
+		return
+	}
 	hashed := hash.Sum(nil)
 
 	err = rsa.VerifyPKCS1v15(&generatedPublicKey, crypto.SHA256, hashed, decodedSignature)
 	if err != nil {
-		fmt.Println("failed to verify signature")
+		log.Println("failed to verify signature")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to verify signature")
 		return
 	}
-	fmt.Println("success to verify signature")
+	log.Println("success to verify signature")
 
 	// 5-15. ID Tokenのペイロードをデコード
 	decodedPayload, err := base64.RawURLEncoding.DecodeString(idTokenParts[1])
 	if err != nil {
-		e := Error{Error: "failed to decode payload"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to decode payload")
 		return
 	}
 
 	// 5-16. ID Tokenのペイロードを構造体へ格納
-	idTokenPayload := new(IdTokenPayload)
+	idTokenPayload := new(IDTokenPayload)
 	err = json.Unmarshal(decodedPayload, idTokenPayload)
 	if err != nil {
-		e := Error{Error: "payload json parse error"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to parse payload json")
 		return
 	}
 
 	// 5-17. issuer値の検証
-	fmt.Println("id token issuer: ", idTokenPayload.Issuer)
-	if idTokenPayload.Issuer != "https://auth.login.yahoo.co.jp/yconnect/v2" {
-		e := Error{Error: "mismatched issuer"}
-		renderTemplate(writer, e, "error")
+	log.Println("id token issuer: ", idTokenPayload.Issuer)
+	if idTokenPayload.Issuer != authorizationEndpoint+"/yconnect/v2" {
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "mismatched issuer")
 		return
 	}
-	fmt.Println("success to verify issuer")
+	log.Println("success to verify issuer")
 
 	// 5-18. audience値の検証
-	fmt.Println("id token audience: ", idTokenPayload.Audience)
-	resultAudience := false
+	log.Println("id token audience: ", idTokenPayload.Audience)
+	var isValidAudience bool
 	for _, audience := range idTokenPayload.Audience {
-		if audience == CLIENT_ID {
-			fmt.Println("mached audience: ", audience)
-			resultAudience = true
+		if audience == ClientID {
+			log.Println("mached audience: ", audience)
+			isValidAudience = true
 			break
 		}
 	}
 
-	if resultAudience != true {
-		e := Error{Error: "mismatched audience"}
-		renderTemplate(writer, e, "error")
+	if !isValidAudience {
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "mismatched audience")
 		return
 	}
-	fmt.Println("success to verify audience")
+	log.Println("success to verify audience")
 
 	// 5-19. セッションCookieからnonce値の抽出
-	storedNonce, err := request.Cookie("nonce")
+	storedNonce, err := r.Cookie("nonce")
 	if err != nil {
-		e := Error{Error: "nonce cookie error"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusBadRequest)
+		errorTemplate.Execute(w, "nonce cookie error")
 		return
 	}
 	// 5-20. セッションCookieに紐づけていたnonce値の破棄
@@ -432,45 +457,45 @@ func callback(writer http.ResponseWriter, request *http.Request) {
 		Name:   "nonce",
 		MaxAge: -1,
 	}
-	http.SetCookie(writer, nonceCookie)
-	fmt.Println("id token nonce: ", idTokenPayload.Nonce)
-	fmt.Println("stored nonce: ", storedNonce.Value)
+	http.SetCookie(w, nonceCookie)
+	log.Println("id token nonce: ", idTokenPayload.Nonce)
+	log.Println("stored nonce: ", storedNonce.Value)
 
 	if idTokenPayload.Nonce != storedNonce.Value {
-		e := Error{Error: "nonce does not match stored one"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "nonce does not match stored one")
 		return
 	}
-	fmt.Println("success to verify nonce")
+	log.Println("success to verify nonce")
 
 	// 5-21. iat値の検証
-	fmt.Println("id token iat: ", idTokenPayload.IssueAt)
+	log.Println("id token iat: ", idTokenPayload.IssueAt)
 	if int(time.Now().Unix())-idTokenPayload.IssueAt >= 600 {
-		e := Error{Error: "too far away from current time"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "too far away from current time")
 		return
 	}
-	fmt.Println("success to verify issue at")
+	log.Println("success to verify issue at")
 
 	// 5-22. at_hash値の検証
 	receivedAccessTokenHash := sha256.Sum256([]byte(tokenData.AccessToken))
 	halfOfAccessTokenHash := receivedAccessTokenHash[:len(receivedAccessTokenHash)/2]
 	encodedhalfOfAccessTokenHash := base64.RawURLEncoding.EncodeToString(halfOfAccessTokenHash)
-	fmt.Println("id token at_hash: ", idTokenPayload.AccessTokenHash)
-	fmt.Println("generated at_hash: ", encodedhalfOfAccessTokenHash)
+	log.Println("id token at_hash: ", idTokenPayload.AccessTokenHash)
+	log.Println("generated at_hash: ", encodedhalfOfAccessTokenHash)
 	if idTokenPayload.AccessTokenHash != encodedhalfOfAccessTokenHash {
-		e := Error{Error: "mismatched at_hash"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "mismatched at_hash")
 		return
 	}
-	fmt.Println("success to verify at_hash")
+	log.Println("success to verify at_hash")
 
 	// 5-23. 以下の値の検証および利用は任意
 	// - idTokenPayload.Expiration
 	// - idTokenPayload.AuthTime
 	// - idTokenPayload.AuthenticationMethodReference
 
-	fmt.Println("success to verify id token claims")
+	log.Println("success to verify id token claims")
 
 	// 3-1. UserInfoリクエスト
 	userInfoRequest, err := http.NewRequest(
@@ -479,55 +504,50 @@ func callback(writer http.ResponseWriter, request *http.Request) {
 		nil,
 	)
 	if err != nil {
-		e := Error{Error: "new http request error"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to create user attribute request")
 		return
 	}
 	userInfoRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	userInfoRequest.Header.Set("Authorization", "Bearer "+tokenData.AccessToken)
-	client2 := &http.Client{}
-	userInfoResponse, err := client2.Do(userInfoRequest)
+	userInfoResponse, err := http.DefaultClient.Do(userInfoRequest)
 	if err != nil {
-		e := Error{Error: "post request error"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to user attribute request")
 		return
 	}
-	defer userInfoResponse.Body.Close()
-
-	userInfoBody, err := ioutil.ReadAll(userInfoResponse.Body)
-	if err != nil {
-		e := Error{Error: "read body error"}
-		renderTemplate(writer, e, "error")
-		return
-	}
-
+	defer func() {
+		_, err = io.Copy(ioutil.Discard, userInfoRequest.Body)
+		if err != nil {
+			log.Panic(err)
+		}
+		err = userInfoResponse.Body.Close()
+		if err != nil {
+			log.Panic(err)
+		}
+	}()
 	// 3-2. UserInfoレスポンスを構造体に格納
-	userInfoData := new(UserInfoResponse)
-	err = json.Unmarshal(userInfoBody, userInfoData)
+	var userInfoData UserInfoResponse
+	err = json.NewDecoder(userInfoRequest.Body).Decode(&userInfoData)
 	if err != nil {
-		e := Error{Error: "json parse error"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "failed to parse user info json")
 		return
 	}
-	fmt.Println("requested userinfo endpoint")
+	log.Println("requested userinfo endpoint")
 
 	// 5-24. sub値の検証
-	fmt.Println("id token sub: ", idTokenPayload.Subject)
-	fmt.Println("userinfo sub: ", userInfoData.Subject)
+	log.Println("id token sub: ", idTokenPayload.Subject)
+	log.Println("userinfo sub: ", userInfoData.Subject)
 	if idTokenPayload.Subject != userInfoData.Subject {
-		e := Error{Error: "mismatched user id"}
-		renderTemplate(writer, e, "error")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorTemplate.Execute(w, "mismatched user id")
 		return
 	}
-	fmt.Println("success to verify user id")
+	log.Println("success to verify user id")
 
 	// 3-4. 構造体にユーザー属性情報をセットしcallback.htmlをレンダリング
-	renderTemplate(writer, userInfoData, "callback")
-	fmt.Println("[[ login completed ]]")
-}
-
-// 1-5. テンプレートをレンダリング
-func renderTemplate(writer http.ResponseWriter, data interface{}, filename string) {
-	templates := template.Must(template.ParseFiles("templates/" + filename + ".html"))
-	templates.ExecuteTemplate(writer, filename, data)
+	w.WriteHeader(http.StatusOK)
+	callbackTemplate.Execute(w, userInfoData)
+	log.Println("[[ login completed ]]")
 }
