@@ -207,8 +207,6 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	// - idTokenPayload.AuthTime
 	// - idTokenPayload.AuthenticationMethodReference
 
-	log.Println("success to verify id token claims")
-
 	// 3-1. UserInfoリクエスト
 	userInfoRequest, err := http.NewRequest(
 		"POST",
