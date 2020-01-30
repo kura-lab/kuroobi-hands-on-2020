@@ -41,22 +41,22 @@ func main() {
 	}
 }
 
+// 1-3. Client ID、Client Secretを定義
 const (
-	// 1-3. Client ID、Client Secretを定義
-	ClientID     = ""
-	ClientSecret = ""
+	ClientID     = "<CLIENT_ID>"
+	ClientSecret = "<CLIENT_SECRET>"
 )
 
 // 1-4. リダイレクトURIを定義
 var RedirectURI = fmt.Sprintf("http://localhost:%d/callback", port)
 
+// 1-5. OpenID ConnectのURLを定義
 const (
-	// 1-5. OpenID ConnectのURLを定義
 	oidcURL = "https://auth.login.yahoo.co.jp"
 )
 
+// 1-6. テンプレートをレンダリング
 var (
-	// 1-6. テンプレートをレンダリング
 	indexTemplate    = template.Must(template.ParseFiles("templates/index.html"))
 	callbackTemplate = template.Must(template.ParseFiles("templates/callback.html"))
 	errorTemplate    = template.Must(template.ParseFiles("templates/error.html"))
@@ -98,7 +98,7 @@ func index(w http.ResponseWriter, r *http.Request) {
 	indexTemplate.Execute(w, u.String())
 }
 
-// 2-3. TokenエンドポイントのJSONレスポンスの結果を格納する構造体
+// 2-4. TokenエンドポイントのJSONレスポンスの結果を格納する構造体
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
@@ -118,6 +118,7 @@ type TokenResponse struct {
 // Access Tokenの取得、ID Tokenの取得と検証
 // UserInfoエンドポイントからユーザー属性情報の取得
 func callback(w http.ResponseWriter, r *http.Request) {
+	// 2-1. クエリを取得
 	query := r.URL.Query()
 
 	// 4-4. redirect_uriからstate値の抽出
@@ -126,13 +127,13 @@ func callback(w http.ResponseWriter, r *http.Request) {
 
 	// 4-6. state値の検証
 
-	// 2-1. Tokenリクエスト
+	// 2-2. Tokenリクエスト
 	values := url.Values{}
 	values.Set("grant_type", "authorization_code")
 	values.Add("client_id", ClientID)
 	values.Add("client_secret", ClientSecret)
 	values.Add("redirect_uri", RedirectURI)
-	// 2-2. redirect_uriからAuthorization Codeを抽出
+	// 2-3. redirect_uriからAuthorization Codeを抽出
 	values.Add("code", query["code"][0])
 	tokenResponse, err := http.Post(oidcURL+"/yconnect/v2/token",
 		"application/x-www-form-urlencoded",
@@ -154,7 +155,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// 2-4. Tokenレスポンスを構造体に格納
+	// 2-5. Tokenレスポンスを構造体に格納
 	var tokenData TokenResponse
 	err = json.NewDecoder(tokenResponse.Body).Decode(&tokenData)
 	if err != nil {

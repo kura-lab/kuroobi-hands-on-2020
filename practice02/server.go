@@ -37,8 +37,8 @@ func main() {
 	}
 }
 
+// 1-3. Client ID、Client Secretを定義
 const (
-	// 1-3. Client ID、Client Secretを定義
 	ClientID     = "<CLIENT_ID>"
 	ClientSecret = "<CLIENT_SECRET>"
 )
@@ -46,13 +46,13 @@ const (
 // 1-4. リダイレクトURIを定義
 var RedirectURI = fmt.Sprintf("http://localhost:%d/callback", port)
 
+// 1-5. OpenID ConnectのURLを定義
 const (
-	// 1-5. OpenID ConnectのURLを定義
 	oidcURL = "https://auth.login.yahoo.co.jp"
 )
 
+// 1-6. テンプレートをレンダリング
 var (
-	// 1-6. テンプレートをレンダリング
 	indexTemplate    = template.Must(template.ParseFiles("templates/index.html"))
 	callbackTemplate = template.Must(template.ParseFiles("templates/callback.html"))
 	errorTemplate    = template.Must(template.ParseFiles("templates/error.html"))
