@@ -49,19 +49,28 @@ func main() {
 	}
 }
 
-// 1-6. error.htmlに渡す構造体(エラー文言)
-type Error struct {
-	Error string
-}
+const (
+	// 1-3. Client ID、Client Secretを定義
+	clientID     = "<CLIENT_ID>"
+	clientSecret = "<CLIENT_SECRET>"
+)
+
+// 1-4. リダイレクトURIを定義
+var RedirectURI = fmt.Sprintf("http://localhost:%d/callback", port)
+
+const (
+	// 1-5. OpenID ConnectのURLを定義
+	oidcUrl = "https://auth.login.yahoo.co.jp"
+)
 
 var (
-	// 1-5. テンプレートをレンダリング
+	// 1-6. テンプレートをレンダリング
 	indexTemplate    = template.Must(template.ParseFiles("templates/index.html"))
 	callbackTemplate = template.Must(template.ParseFiles("templates/callback.html"))
 	errorTemplate    = template.Must(template.ParseFiles("templates/error.html"))
 )
 
-// 4-2. ランダム文字列を生成
+// 4-1. ランダム文字列を生成
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
@@ -76,23 +85,10 @@ func generateRandomString() string {
 	return string(result)
 }
 
-const (
-	// 1-3. Client ID、Client Secret、リダイレクトURIを設定
-	ClientID     = "<CLIENT_ID>"
-	ClientSecret = "<CLIENT_SECRET>"
-)
-
-var RedirectURI = fmt.Sprintf("http://localhost:%d/callback", port)
-
-const (
-	// 1-4. AuthorizationリクエストURL生成
-	authorizationEndpoint = "https://auth.login.yahoo.co.jp"
-)
-
 // AuthorizationリクエストのURLを生成
 func index(w http.ResponseWriter, r *http.Request) {
 	log.Println("[[ login started ]]")
-	// 4-1. セッションCookieに紐付けるstate値を生成し保存
+	// 4-2. セッションCookieに紐付けるstate値を生成し保存
 	state := generateRandomString()
 	stateCookie := &http.Cookie{
 		Name:     "state",
@@ -110,21 +106,21 @@ func index(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, nonceCookie)
 	log.Println("stored state and nonce in session")
 
-	// 1-4. AuthorizationリクエストURL生成
-	u, err := url.Parse(authorizationEndpoint)
+	// 1-7. AuthorizationリクエストURL生成
+	u, err := url.Parse(oidcUrl)
 	if err != nil {
-		// 1-5. 構造体にエラー文言を格納してerror.htmlをレンダリング
+		// 1-8. 構造体にエラー文言を格納してerror.htmlをレンダリング
 		w.WriteHeader(http.StatusInternalServerError)
 		errorTemplate.Execute(w, "url parse error")
 		return
 	}
 	u.Path = path.Join(u.Path, "yconnect/v2/authorization")
 	q := u.Query()
-	// 1-7. response_typeにAuthorization Code Flowを指定
+	// 1-9. response_typeにAuthorization Code Flowを指定
 	q.Set("response_type", "code")
-	q.Set("client_id", ClientID)
+	q.Set("client_id", clientID)
 	q.Set("redirect_uri", RedirectURI)
-	// 1-8. UserInfoエンドポイントから取得するscopeを指定
+	// 1-10. UserInfoエンドポイントから取得するscopeを指定
 	q.Set("scope", "openid email")
 	// 4-3. セッションCookieに紐づけたstate値を指定
 	q.Set("state", state)
@@ -132,28 +128,46 @@ func index(w http.ResponseWriter, r *http.Request) {
 	q.Set("nonce", nonce)
 	u.RawQuery = q.Encode()
 	log.Println("generated authorization endpoint url")
-	// 1-9. 構造体にURLをセットしindex.htmlをレンダリング
+	// 1-11. 構造体にURLをセットしindex.htmlをレンダリング
 	w.WriteHeader(http.StatusOK)
 	indexTemplate.Execute(w, u.String())
 }
 
-// 2-4. TokenエンドポイントのJSONレスポンスの結果を格納する構造体
+// 2-3. TokenエンドポイントのJSONレスポンスの結果を格納する構造体
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int    `json:"expires_in"`
-	IDToken      string `json:"id_token"`
+	IdToken      string `json:"id_token"`
 }
 
-// 5-6. ID Tokenのヘッダーを格納する構造体
+// 3-2. UserInfoエンドポイントのJSONレスポンスの結果を格納する構造体
+type UserInfoResponse struct {
+	Subject string `json:"sub"`
+	Email   string `json:"email"`
+}
+
+// 5-5. ID Tokenのヘッダーを格納する構造体
 type IDTokenHeader struct {
 	Type      string `json:"typ"`
 	Algorithm string `json:"alg"`
 	KeyID     string `json:"kid"`
 }
 
-// 5-17. ID Tokenのペイロードを格納する構造体
+// 5-10. JWKsエンドポイントのJSONレスポンスの結果を格納する構造体
+type JWKsResponse struct {
+	KeySets []struct {
+		KeyID     string `json:"kid"`
+		KeyType   string `json:"kty"`
+		Algorithm string `json:"alg"`
+		Use       string `json:"use"`
+		Modulus   string `json:"n"`
+		Exponent  string `json:"e"`
+	} `json:"keys"`
+}
+
+// 5-16. ID Tokenのペイロードを格納する構造体
 type IDTokenPayload struct {
 	Issuer                        string   `json:"iss"`
 	Subject                       string   `json:"sub"`
@@ -166,29 +180,12 @@ type IDTokenPayload struct {
 	AccessTokenHash               string   `json:"at_hash"`
 }
 
-// 5-11. JWKsエンドポイントのJSONレスポンスの結果を格納する構造体
-type JWKsResponse struct {
-	KeySets []struct {
-		KeyID     string `json:"kid"`
-		KeyType   string `json:"kty"`
-		Algorithm string `json:"alg"`
-		Use       string `json:"use"`
-		Modulus   string `json:"n"`
-		Exponent  string `json:"e"`
-	} `json:"keys"`
-}
-
-// 3-3. UserInfoエンドポイントのJSONレスポンスの結果を格納する構造体
-type UserInfoResponse struct {
-	Subject string `json:"sub"`
-	Email   string `json:"email"`
-}
-
 // Access Tokenの取得、ID Tokenの取得と検証
 // UserInfoエンドポイントからユーザー属性情報の取得
 func callback(w http.ResponseWriter, r *http.Request) {
-	// 4-4. redirect_uriからstate値の抽出
 	query := r.URL.Query()
+
+	// 4-4. redirect_uriからstate値の抽出
 	stateQuery, ok := query["state"]
 	if !ok {
 		w.WriteHeader(http.StatusBadRequest)
@@ -220,14 +217,15 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	// 2-1. Tokenリクエスト
 	values := url.Values{}
 	values.Set("grant_type", "authorization_code")
-	values.Add("client_id", ClientID)
-	values.Add("client_secret", ClientSecret)
+	values.Add("client_id", clientID)
+	values.Add("client_secret", clientSecret)
 	values.Add("redirect_uri", RedirectURI)
 	// 2-2. redirect_uriからAuthorization Codeを抽出
 	values.Add("code", query["code"][0])
-	tokenResponse, err := http.Post(authorizationEndpoint+"/yconnect/v2/token",
+	tokenResponse, err := http.Post(oidcUrl+"/yconnect/v2/token",
 		"application/x-www-form-urlencoded",
 		strings.NewReader(values.Encode()))
+
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		errorTemplate.Execute(w, "failed to post request")
@@ -244,7 +242,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// 2-3. Tokenレスポンスを構造体に格納
+	// 2-4. Tokenレスポンスを構造体に格納
 	var tokenData TokenResponse
 	err = json.NewDecoder(tokenResponse.Body).Decode(&tokenData)
 	if err != nil {
@@ -255,7 +253,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	log.Println("requested token endpoint")
 
 	// 5-3. ID Tokenのデータ部の分解
-	idTokenParts := strings.SplitN(tokenData.IDToken, ".", 3)
+	idTokenParts := strings.SplitN(tokenData.IdToken, ".", 3)
 	log.Println("header: ", idTokenParts[0])
 	log.Println("payload: ", idTokenParts[1])
 	log.Println("signature: ", idTokenParts[2])
@@ -267,7 +265,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 		errorTemplate.Execute(w, "failed to decode ID Token")
 		return
 	}
-	// 5-5. ID Tokenのヘッダーを構造体に格納
+	// 5-6. ID Tokenのヘッダーを構造体に格納
 	var idTokenHeader IDTokenHeader
 	err = json.Unmarshal(header, &idTokenHeader)
 	if err != nil {
@@ -292,7 +290,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5-9. JWKsリクエスト
-	jwksResponse, err := http.Get(authorizationEndpoint + "/yconnect/v2/jwks")
+	jwksResponse, err := http.Get(oidcUrl + "/yconnect/v2/jwks")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		errorTemplate.Execute(w, "failed to get jwk")
@@ -309,7 +307,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// 5-10. JWKsレスポンスを構造体に格納
+	// 5-11. JWKsレスポンスを構造体に格納
 	var jwksData JWKsResponse
 	err = json.NewDecoder(jwksResponse.Body).Decode(&jwksData)
 	if err != nil {
@@ -409,7 +407,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5-16. ID Tokenのペイロードを構造体へ格納
+	// 5-17. ID Tokenのペイロードを構造体へ格納
 	idTokenPayload := new(IDTokenPayload)
 	err = json.Unmarshal(decodedPayload, idTokenPayload)
 	if err != nil {
@@ -418,20 +416,20 @@ func callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5-17. issuer値の検証
+	// 5-18. issuer値の検証
 	log.Println("id token issuer: ", idTokenPayload.Issuer)
-	if idTokenPayload.Issuer != authorizationEndpoint+"/yconnect/v2" {
+	if idTokenPayload.Issuer != oidcUrl+"/yconnect/v2" {
 		w.WriteHeader(http.StatusInternalServerError)
 		errorTemplate.Execute(w, "mismatched issuer")
 		return
 	}
 	log.Println("success to verify issuer")
 
-	// 5-18. audience値の検証
+	// 5-19. audience値の検証
 	log.Println("id token audience: ", idTokenPayload.Audience)
 	var isValidAudience bool
 	for _, audience := range idTokenPayload.Audience {
-		if audience == ClientID {
+		if audience == clientID {
 			log.Println("mached audience: ", audience)
 			isValidAudience = true
 			break
@@ -445,14 +443,14 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("success to verify audience")
 
-	// 5-19. セッションCookieからnonce値の抽出
+	// 5-20. セッションCookieからnonce値の抽出
 	storedNonce, err := r.Cookie("nonce")
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		errorTemplate.Execute(w, "nonce cookie error")
 		return
 	}
-	// 5-20. セッションCookieに紐づけていたnonce値の破棄
+	// 5-21. セッションCookieに紐づけていたnonce値の破棄
 	nonceCookie := &http.Cookie{
 		Name:   "nonce",
 		MaxAge: -1,
@@ -468,7 +466,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("success to verify nonce")
 
-	// 5-21. iat値の検証
+	// 5-22. iat値の検証
 	log.Println("id token iat: ", idTokenPayload.IssueAt)
 	if int(time.Now().Unix())-idTokenPayload.IssueAt >= 600 {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -477,7 +475,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("success to verify issue at")
 
-	// 5-22. at_hash値の検証
+	// 5-23. at_hash値の検証
 	receivedAccessTokenHash := sha256.Sum256([]byte(tokenData.AccessToken))
 	halfOfAccessTokenHash := receivedAccessTokenHash[:len(receivedAccessTokenHash)/2]
 	encodedhalfOfAccessTokenHash := base64.RawURLEncoding.EncodeToString(halfOfAccessTokenHash)
@@ -490,7 +488,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("success to verify at_hash")
 
-	// 5-23. 以下の値の検証および利用は任意
+	// 5-24. 以下の値の検証および利用は任意
 	// - idTokenPayload.Expiration
 	// - idTokenPayload.AuthTime
 	// - idTokenPayload.AuthenticationMethodReference
@@ -517,7 +515,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() {
-		_, err = io.Copy(ioutil.Discard, userInfoRequest.Body)
+		_, err = io.Copy(ioutil.Discard, userInfoResponse.Body)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -526,9 +524,10 @@ func callback(w http.ResponseWriter, r *http.Request) {
 			log.Panic(err)
 		}
 	}()
-	// 3-2. UserInfoレスポンスを構造体に格納
+
+	// 3-3. UserInfoレスポンスを構造体に格納
 	var userInfoData UserInfoResponse
-	err = json.NewDecoder(userInfoRequest.Body).Decode(&userInfoData)
+	err = json.NewDecoder(userInfoResponse.Body).Decode(&userInfoData)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		errorTemplate.Execute(w, "failed to parse user info json")
@@ -536,7 +535,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("requested userinfo endpoint")
 
-	// 5-24. sub値の検証
+	// 5-25. sub値の検証
 	log.Println("id token sub: ", idTokenPayload.Subject)
 	log.Println("userinfo sub: ", userInfoData.Subject)
 	if idTokenPayload.Subject != userInfoData.Subject {
