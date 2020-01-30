@@ -51,8 +51,8 @@ func main() {
 
 const (
 	// 1-3. Client ID、Client Secretを定義
-	clientID     = "<CLIENT_ID>"
-	clientSecret = "<CLIENT_SECRET>"
+	ClientID     = "<CLIENT_ID>"
+	ClientSecret = "<CLIENT_SECRET>"
 )
 
 // 1-4. リダイレクトURIを定義
@@ -60,7 +60,7 @@ var RedirectURI = fmt.Sprintf("http://localhost:%d/callback", port)
 
 const (
 	// 1-5. OpenID ConnectのURLを定義
-	oidcUrl = "https://auth.login.yahoo.co.jp"
+	oidcURL = "https://auth.login.yahoo.co.jp"
 )
 
 var (
@@ -107,7 +107,7 @@ func index(w http.ResponseWriter, r *http.Request) {
 	log.Println("stored state and nonce in session")
 
 	// 1-7. AuthorizationリクエストURL生成
-	u, err := url.Parse(oidcUrl)
+	u, err := url.Parse(oidcURL)
 	if err != nil {
 		// 1-8. 構造体にエラー文言を格納してerror.htmlをレンダリング
 		w.WriteHeader(http.StatusInternalServerError)
@@ -118,7 +118,7 @@ func index(w http.ResponseWriter, r *http.Request) {
 	q := u.Query()
 	// 1-9. response_typeにAuthorization Code Flowを指定
 	q.Set("response_type", "code")
-	q.Set("client_id", clientID)
+	q.Set("client_id", ClientID)
 	q.Set("redirect_uri", RedirectURI)
 	// 1-10. UserInfoエンドポイントから取得するscopeを指定
 	q.Set("scope", "openid email")
@@ -139,7 +139,7 @@ type TokenResponse struct {
 	TokenType    string `json:"token_type"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int    `json:"expires_in"`
-	IdToken      string `json:"id_token"`
+	IDToken      string `json:"id_token"`
 }
 
 // 3-2. UserInfoエンドポイントのJSONレスポンスの結果を格納する構造体
@@ -217,12 +217,12 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	// 2-1. Tokenリクエスト
 	values := url.Values{}
 	values.Set("grant_type", "authorization_code")
-	values.Add("client_id", clientID)
-	values.Add("client_secret", clientSecret)
+	values.Add("client_id", ClientID)
+	values.Add("client_secret", ClientSecret)
 	values.Add("redirect_uri", RedirectURI)
 	// 2-2. redirect_uriからAuthorization Codeを抽出
 	values.Add("code", query["code"][0])
-	tokenResponse, err := http.Post(oidcUrl+"/yconnect/v2/token",
+	tokenResponse, err := http.Post(oidcURL+"/yconnect/v2/token",
 		"application/x-www-form-urlencoded",
 		strings.NewReader(values.Encode()))
 
@@ -253,7 +253,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	log.Println("requested token endpoint")
 
 	// 5-3. ID Tokenのデータ部の分解
-	idTokenParts := strings.SplitN(tokenData.IdToken, ".", 3)
+	idTokenParts := strings.SplitN(tokenData.IDToken, ".", 3)
 	log.Println("header: ", idTokenParts[0])
 	log.Println("payload: ", idTokenParts[1])
 	log.Println("signature: ", idTokenParts[2])
@@ -290,7 +290,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5-9. JWKsリクエスト
-	jwksResponse, err := http.Get(oidcUrl + "/yconnect/v2/jwks")
+	jwksResponse, err := http.Get(oidcURL + "/yconnect/v2/jwks")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		errorTemplate.Execute(w, "failed to get jwk")
@@ -418,7 +418,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 
 	// 5-18. issuer値の検証
 	log.Println("id token issuer: ", idTokenPayload.Issuer)
-	if idTokenPayload.Issuer != oidcUrl+"/yconnect/v2" {
+	if idTokenPayload.Issuer != oidcURL+"/yconnect/v2" {
 		w.WriteHeader(http.StatusInternalServerError)
 		errorTemplate.Execute(w, "mismatched issuer")
 		return
@@ -429,7 +429,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	log.Println("id token audience: ", idTokenPayload.Audience)
 	var isValidAudience bool
 	for _, audience := range idTokenPayload.Audience {
-		if audience == clientID {
+		if audience == ClientID {
 			log.Println("mached audience: ", audience)
 			isValidAudience = true
 			break
