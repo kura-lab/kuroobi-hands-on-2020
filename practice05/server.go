@@ -107,13 +107,15 @@ func index(w http.ResponseWriter, r *http.Request) {
 	q.Set("redirect_uri", RedirectURI)
 	// 1-10. UserInfoエンドポイントから取得するscopeを指定
 	q.Set("scope", "openid email")
+	// 1-11. ログイン画面と同意画面の強制表示
+	q.Set("prompt", "login consent")
 	// 4-3. セッションCookieに紐づけたstate値を指定
 	q.Set("state", state)
 	// 5-2. セッションCookieに紐づけたnonce値を指定
 	q.Set("nonce", "NONCE_STUB")
 	u.RawQuery = q.Encode()
 	log.Println("generated authorization endpoint url")
-	// 1-11. 構造体にURLをセットしindex.htmlをレンダリング
+	// 1-12. 構造体にURLをセットしindex.htmlをレンダリング
 	w.WriteHeader(http.StatusOK)
 	indexTemplate.Execute(w, u.String())
 }

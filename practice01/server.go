@@ -41,11 +41,13 @@ func index(w http.ResponseWriter, r *http.Request) {
 
 	// 1-10. UserInfoエンドポイントから取得するscopeを指定
 
+	// 1-11. ログイン画面と同意画面の強制表示
+
 	// 4-3. セッションCookieに紐づけたstate値を指定
 
 	// 5-2. セッションCookieに紐づけたnonce値を指定
 
-	// 1-11. 構造体にURLをセットしindex.htmlをレンダリング
+	// 1-12. 構造体にURLをセットしindex.htmlをレンダリング
 
 }
 
