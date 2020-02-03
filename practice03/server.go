@@ -42,9 +42,9 @@ func main() {
 
 // 1-7. テンプレートをレンダリング
 var (
-	indexTemplate    = template.Must(template.ParseFiles("templates/index.html"))
-	callbackTemplate = template.Must(template.ParseFiles("templates/callback.html"))
-	errorTemplate    = template.Must(template.ParseFiles("templates/error.html"))
+	indexTemplate    = template.Must(template.ParseFiles("../templates/index.html"))
+	callbackTemplate = template.Must(template.ParseFiles("../templates/callback.html"))
+	errorTemplate    = template.Must(template.ParseFiles("../templates/error.html"))
 )
 
 // 4-1. ランダム文字列を生成
