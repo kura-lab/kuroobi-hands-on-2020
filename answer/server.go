@@ -20,24 +20,23 @@ import (
 	"path"
 	"strings"
 	"time"
-)
 
-const (
-	port = 8080
+	// 1-6. 設定パッケージのインポート
+	"github.com/kura-lab/kuroobi-hands-on-2020/config"
 )
 
 func main() {
 	// 1-1. マルチプレクサにハンドラを登録
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, fmt.Sprintf("http://localhost:%d/index", port), http.StatusMovedPermanently)
+		http.Redirect(w, r, fmt.Sprintf("http://localhost:%d/index", config.Port), http.StatusMovedPermanently)
 	})
 	mux.HandleFunc("/index", index)
 	mux.HandleFunc("/callback", callback)
 
 	// 1-2. サーバー設定
 	server := &http.Server{
-		Addr:           fmt.Sprintf("0.0.0.0:%d", port),
+		Addr:           fmt.Sprintf("0.0.0.0:%d", config.Port),
 		Handler:        mux,
 		ReadTimeout:    time.Second * 10,
 		WriteTimeout:   time.Second * 600,
@@ -49,21 +48,7 @@ func main() {
 	}
 }
 
-// 1-3. Client ID、Client Secretを定義
-const (
-	ClientID     = "<CLIENT_ID>"
-	ClientSecret = "<CLIENT_SECRET>"
-)
-
-// 1-4. リダイレクトURIを定義
-var RedirectURI = fmt.Sprintf("http://localhost:%d/callback", port)
-
-// 1-5. OpenID ConnectのURLを定義
-const (
-	oidcURL = "https://auth.login.yahoo.co.jp"
-)
-
-// 1-6. テンプレートをレンダリング
+// 1-7. テンプレートをレンダリング
 var (
 	indexTemplate    = template.Must(template.ParseFiles("templates/index.html"))
 	callbackTemplate = template.Must(template.ParseFiles("templates/callback.html"))
@@ -106,23 +91,23 @@ func index(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, nonceCookie)
 	log.Println("stored state and nonce in session")
 
-	// 1-7. AuthorizationリクエストURL生成
-	u, err := url.Parse(oidcURL)
+	// 1-8. AuthorizationリクエストURL生成
+	u, err := url.Parse(config.OIDCURL)
 	if err != nil {
-		// 1-8. 構造体にエラー文言を格納してerror.htmlをレンダリング
+		// 1-9. 構造体にエラー文言を格納してerror.htmlをレンダリング
 		w.WriteHeader(http.StatusInternalServerError)
 		errorTemplate.Execute(w, "url parse error")
 		return
 	}
 	u.Path = path.Join(u.Path, "yconnect/v2/authorization")
 	q := u.Query()
-	// 1-9. response_typeにAuthorization Code Flowを指定
+	// 1-10. response_typeにAuthorization Code Flowを指定
 	q.Set("response_type", "code")
-	q.Set("client_id", ClientID)
-	q.Set("redirect_uri", RedirectURI)
-	// 1-10. UserInfoエンドポイントから取得するscopeを指定
+	q.Set("client_id", config.ClientID)
+	q.Set("redirect_uri", config.RedirectURI)
+	// 1-11. UserInfoエンドポイントから取得するscopeを指定
 	q.Set("scope", "openid email")
-	// 1-11. ログイン画面と同意画面の強制表示
+	// 1-12. ログイン画面と同意画面の強制表示
 	q.Set("prompt", "login consent")
 	// 4-3. セッションCookieに紐づけたstate値を指定
 	q.Set("state", state)
@@ -130,7 +115,7 @@ func index(w http.ResponseWriter, r *http.Request) {
 	q.Set("nonce", nonce)
 	u.RawQuery = q.Encode()
 	log.Println("generated authorization endpoint url")
-	// 1-12. 構造体にURLをセットしindex.htmlをレンダリング
+	// 1-13. 構造体にURLをセットしindex.htmlをレンダリング
 	w.WriteHeader(http.StatusOK)
 	indexTemplate.Execute(w, u.String())
 }
@@ -220,12 +205,12 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	// 2-2. Tokenリクエスト
 	values := url.Values{}
 	values.Set("grant_type", "authorization_code")
-	values.Add("client_id", ClientID)
-	values.Add("client_secret", ClientSecret)
-	values.Add("redirect_uri", RedirectURI)
+	values.Add("client_id", config.ClientID)
+	values.Add("client_secret", config.ClientSecret)
+	values.Add("redirect_uri", config.RedirectURI)
 	// 2-3. redirect_uriからAuthorization Codeを抽出
 	values.Add("code", query["code"][0])
-	tokenResponse, err := http.Post(oidcURL+"/yconnect/v2/token",
+	tokenResponse, err := http.Post(config.OIDCURL+"/yconnect/v2/token",
 		"application/x-www-form-urlencoded",
 		strings.NewReader(values.Encode()))
 
@@ -293,7 +278,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5-9. JWKsリクエスト
-	jwksResponse, err := http.Get(oidcURL + "/yconnect/v2/jwks")
+	jwksResponse, err := http.Get(config.OIDCURL + "/yconnect/v2/jwks")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		errorTemplate.Execute(w, "failed to get jwk")
@@ -421,7 +406,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 
 	// 5-18. issuer値の検証
 	log.Println("id token issuer: ", idTokenPayload.Issuer)
-	if idTokenPayload.Issuer != oidcURL+"/yconnect/v2" {
+	if idTokenPayload.Issuer != config.OIDCURL+"/yconnect/v2" {
 		w.WriteHeader(http.StatusInternalServerError)
 		errorTemplate.Execute(w, "mismatched issuer")
 		return
@@ -432,7 +417,7 @@ func callback(w http.ResponseWriter, r *http.Request) {
 	log.Println("id token audience: ", idTokenPayload.Audience)
 	var isValidAudience bool
 	for _, audience := range idTokenPayload.Audience {
-		if audience == ClientID {
+		if audience == config.ClientID {
 			log.Println("mached audience: ", audience)
 			isValidAudience = true
 			break

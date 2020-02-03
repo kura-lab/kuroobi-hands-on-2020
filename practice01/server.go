@@ -3,10 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
-)
-
-const (
-	port = 8080
+	// 1-6. 設定パッケージのインポート
 )
 
 func main() {
@@ -16,13 +13,7 @@ func main() {
 
 }
 
-// 1-3. Client ID、Client Secretを定義
-
-// 1-4. リダイレクトURIを定義
-
-// 1-5. OpenID ConnectのURLを定義
-
-// 1-6. テンプレートをレンダリング
+// 1-7. テンプレートをレンダリング
 
 // 4-1. ランダム文字列を生成
 
@@ -33,21 +24,21 @@ func index(w http.ResponseWriter, r *http.Request) {
 
 	// 5-1. セッションCookieに紐付けるnonce値を生成し保存
 
-	// 1-7. AuthorizationリクエストURL生成
+	// 1-8. AuthorizationリクエストURL生成
 
-	// 1-8. 構造体にエラー文言を格納してerror.htmlをレンダリング
+	// 1-9. 構造体にエラー文言を格納してerror.htmlをレンダリング
 
-	// 1-9. response_typeにAuthorization Code Flowを指定
+	// 1-10. response_typeにAuthorization Code Flowを指定
 
-	// 1-10. UserInfoエンドポイントから取得するscopeを指定
+	// 1-11. UserInfoエンドポイントから取得するscopeを指定
 
-	// 1-11. ログイン画面と同意画面の強制表示
+	// 1-12. ログイン画面と同意画面の強制表示
 
 	// 4-3. セッションCookieに紐づけたstate値を指定
 
 	// 5-2. セッションCookieに紐づけたnonce値を指定
 
-	// 1-12. 構造体にURLをセットしindex.htmlをレンダリング
+	// 1-13. 構造体にURLをセットしindex.htmlをレンダリング
 
 }
 
