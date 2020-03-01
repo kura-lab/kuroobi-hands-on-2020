@@ -12,6 +12,7 @@
 本内容は以下の講義で実施されたハンズオンの演習用のソースコードです。
 
 * Go言語で学ぶYahoo! ID連携の黒帯ハンズオン
+  * https://speakerdeck.com/kuralab/20200204-kurobi-hands-on
 
 # コンテンツ
 
