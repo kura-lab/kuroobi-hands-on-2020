@@ -64,8 +64,8 @@ github.comからソースコードをcloneする
 
 ```
 $ cd $HOME/go/src/
-$ git clone git@github.com:kura-lab/kuroobi-hands-on-2020.git
-$ cd kuroobi-hands-on-2020/practice00/
+$ git clone https://github.com/kura-lab/kuroobi-hands-on-2020.git github.com/kura-lab/kuroobi-hands-on-2020
+$ cd github.com/kuroobi-hands-on-2020/practice00/
 ```
 
 以下のコマンドで`server.go`ビルドしWebアプリケーションを実行
