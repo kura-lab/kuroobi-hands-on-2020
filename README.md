@@ -26,6 +26,6 @@
 * practice04
   * CSRF対策の実装
 * practice05
-  * リプレイ攻撃対策
+  * リプレイ攻撃対策の実装
 * answer
   * practice00〜05までの模範解答
